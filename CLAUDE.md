@@ -28,8 +28,8 @@ El diseño completo está en `docs/GDD.md`. Este archivo es el resumen operativo
 | Capa | Herramienta |
 | --- | --- |
 | Lenguaje / build | TypeScript (strict) + Vite |
-| Render | PixiJS v8 (WebGPU, fallback WebGL) + shader propio de rejilla ASCII |
-| Fuente | MSDF generada con msdf-bmfont-xml |
+| Render | PixiJS v8 sobre **WebGL2** (de momento sin WebGPU) + shader propio de rejilla ASCII |
+| Fuente | MSDF generada con msdf-bmfont-xml (`npm run font`); base JetBrains Mono (OFL) |
 | Postprocesado | pixi-filters + shaders propios |
 | Simulación | miniplex (ECS) |
 | Utilidades | rot.js, simplex-noise |
@@ -42,6 +42,8 @@ El diseño completo está en `docs/GDD.md`. Este archivo es el resumen operativo
 | Arte a mano | REXPaint (.xp importados) |
 
 **No añadas dependencias fuera de esta lista sin preguntar antes.** Electron, no Tauri (WebKitGTK rinde mal con WebGL en Steam Deck).
+
+**Solo WebGL2, sin WebGPU, por ahora.** Con los dos habría que escribir cada shader dos veces (GLSL y WGSL), incluidos los de iluminación y postprocesado, y WebGPU en Linux / Steam Deck dentro de Electron no está garantizado. WebGL2 funciona en todas las plataformas objetivo. Se reconsiderará si el rendimiento lo pide. Los shaders se escriben en GLSL ES 3.0.
 
 ## Estructura
 
@@ -88,6 +90,8 @@ npm run dev        # servidor de desarrollo
 npm run build      # build web
 npm run typecheck  # tsc --noEmit
 npm run test       # vitest
+npm run format     # prettier
+npm run font       # regenera el atlas MSDF desde assets/fonts/fonts.json
 npm run electron   # app de escritorio en desarrollo
 ```
 

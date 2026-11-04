@@ -14,12 +14,14 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "font": "node scripts/build-font.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.22.0"
   },
   "devDependencies": {
+    "msdf-bmfont-xml": "^2.8.0",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",

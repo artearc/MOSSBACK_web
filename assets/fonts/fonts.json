@@ -1,0 +1,25 @@
+{
+  "$comment": "Configuración del atlas MSDF. Se genera con `npm run font`. Para añadir glifos propios, añade otra fuente a `fonts` (con sus caracteres en U+E000… y sus nombres en `names`) y vuelve a generar.",
+  "output": {
+    "image": "atlas.png",
+    "manifest": "atlas.json",
+    "textureSize": [1024, 1024],
+    "fontSize": 48,
+    "distanceRange": 6
+  },
+  "layout": {
+    "$comment": "Cómo se coloca cada glifo en la celda cuadrada. `fill`: rangos que se estiran a toda la celda (cajas y bloques, para que encajen sin huecos). El resto se escala igual en todos (centrado), con un estiramiento horizontal opcional.",
+    "fill": ["U+2500-U+259F"],
+    "fillBleed": 0.03,
+    "textStretchX": 1.3,
+    "textScale": 1.0
+  },
+  "fonts": [
+    {
+      "file": "src/JetBrainsMono-Regular.ttf",
+      "charsets": ["cp437", "latin1"],
+      "extra": "←↑→↓↖↗↘↙◆◇□▪▫●◦⌘∴∵",
+      "names": {}
+    }
+  ]
+}

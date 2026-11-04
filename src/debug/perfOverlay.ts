@@ -13,6 +13,8 @@ export interface PerfOverlayOptions {
   readonly stepHz: number;
   /** Líneas extra fijas (leyendas, ayudas). */
   readonly notes?: readonly string[];
+  /** Líneas que cambian; se piden en cada refresco del texto, no en cada frame. */
+  readonly live?: () => string;
 }
 
 export interface PerfOverlay {
@@ -65,13 +67,15 @@ export function createPerfOverlay(parent: HTMLElement, options: PerfOverlayOptio
       const elapsed = stats.now - windowStart;
       if (elapsed < REFRESH_MS) return;
 
+      const fps = (frames * 1000) / elapsed;
+      el.dataset['fps'] = fps.toFixed(1);
       if (!el.hidden) {
-        const fps = (frames * 1000) / elapsed;
         el.textContent =
           `FPS        ${fps.toFixed(0)}\n` +
           `frame      ${(sumFrameMs / frames).toFixed(2)} ms (máx ${maxFrameMs.toFixed(1)})\n` +
           `sim        ${options.stepHz} Hz · ${(sumSteps / frames).toFixed(2)} pasos/frame\n` +
           `render     ${options.backend}\n` +
+          (options.live ? `${options.live()}\n` : '') +
           footer;
       }
 

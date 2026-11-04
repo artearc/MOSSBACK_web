@@ -1,16 +1,23 @@
-import { Application } from 'pixi.js';
-import { createGameLoop, DEFAULT_FIXED_STEP, type FixedStepOptions } from './core/loop';
-import { createInterpolationProbe } from './debug/interpolationProbe';
+import { Application, type WebGLRenderer } from 'pixi.js';
+import { createGameLoop, DEFAULT_FIXED_STEP } from './core/loop';
+import { readBenchmarkFrames, runBenchmark } from './debug/benchmark';
+import { createGridStressScene } from './debug/gridStressScene';
 import { createPerfOverlay } from './debug/perfOverlay';
+import type { Viewport } from './render/camera';
+import { loadGlyphAtlas } from './render/fontAtlas';
+import { GridRenderer } from './render/gridRenderer';
 
-/**
- * En desarrollo, `?hz=10` baja la frecuencia de simulación para ver la interpolación con
- * claridad. En producción la simulación va siempre a 60 Hz.
- */
-function readStepHz(): number {
-  if (!import.meta.env.DEV) return DEFAULT_FIXED_STEP.stepHz;
-  const hz = Number(new URLSearchParams(window.location.search).get('hz'));
-  return Number.isFinite(hz) && hz >= 1 && hz <= 240 ? hz : DEFAULT_FIXED_STEP.stepHz;
+/** En desarrollo, `?cells=400x240` cambia el tamaño de la rejilla de prueba. */
+function readGridSize(): { cols: number; rows: number } {
+  const fallback = { cols: 200, rows: 120 };
+  if (!import.meta.env.DEV) return fallback;
+  const match = /^(\d+)x(\d+)$/.exec(
+    new URLSearchParams(window.location.search).get('cells') ?? '',
+  );
+  if (!match) return fallback;
+  const cols = Number(match[1]);
+  const rows = Number(match[2]);
+  return cols >= 1 && rows >= 1 && cols <= 1300 && rows <= 1300 ? { cols, rows } : fallback;
 }
 
 async function main(): Promise<void> {
@@ -19,43 +26,102 @@ async function main(): Promise<void> {
 
   const app = new Application();
   await app.init({
-    preference: 'webgpu', // si no hay WebGPU, PixiJS usa WebGL
+    preference: 'webgl', // solo WebGL2 por ahora (ver CLAUDE.md)
     resizeTo: host,
     background: '#0e1210',
-    antialias: true,
+    antialias: false, // la rejilla no lo necesita: sus bordes se calculan en el shader
     autoDensity: true,
     resolution: window.devicePixelRatio,
     autoStart: false, // el render lo dispara nuestro bucle, no el ticker de PixiJS
     sharedTicker: false,
   });
+  const renderer = app.renderer as WebGLRenderer;
+  if (renderer.context.webGLVersion !== 2) {
+    throw new Error('Mossback necesita WebGL2');
+  }
   host.appendChild(app.canvas);
 
-  const loopOptions: FixedStepOptions = { ...DEFAULT_FIXED_STEP, stepHz: readStepHz() };
+  const { glyphs, atlas } = await loadGlyphAtlas();
+  const { cols, rows } = readGridSize();
+  const grid = new GridRenderer({
+    cols,
+    rows,
+    glyphs,
+    atlas,
+    layers: [{ name: 'ground' }, { name: 'objects' }, { name: 'fx', alpha: 0.85 }],
+  });
+  app.stage.addChild(grid.container);
 
-  const probe = import.meta.env.DEV ? createInterpolationProbe(app.stage, app.screen) : null;
+  const view: Viewport = {
+    get width() {
+      return app.screen.width;
+    },
+    get height() {
+      return app.screen.height;
+    },
+    get resolution() {
+      return app.renderer.resolution;
+    },
+  };
+
+  const scene = createGridStressScene(grid, app.canvas, () => view);
   const overlay = import.meta.env.DEV
     ? createPerfOverlay(document.body, {
-        backend: app.renderer.name,
-        stepHz: loopOptions.stepHz,
-        notes: ['', 'verde: interpolado', 'naranja: sin interpolar', '?hz=10: simular a 10 Hz'],
+        backend: `${app.renderer.name}2`,
+        stepHz: DEFAULT_FIXED_STEP.stepHz,
+        live: () => {
+          const s = grid.stats;
+          return (
+            `rejilla    ${cols}×${rows} · ${s.drawCalls} draw calls\n` +
+            `subida     ${((s.uploadedTexels * 4) / 1024).toFixed(0)} KB/frame · ${s.uploadCalls} llamadas\n` +
+            scene.describe()
+          );
+        },
+        notes: ['', 'rueda: zoom · WASD: mover', '1 2 3: capas · 0: recentrar'],
       })
     : null;
 
-  const loop = createGameLoop(
-    {
-      update(dt) {
-        probe?.update(dt);
-      },
-      render(alpha) {
-        probe?.render(alpha);
+  const drawFrame = (alpha: number, timeSeconds: number): void => {
+    scene.render(alpha, timeSeconds);
+    grid.sync(scene.camera, view);
+    app.render();
+  };
+
+  const benchFrames = readBenchmarkFrames();
+  if (benchFrames !== null) {
+    // Se mide aparte cuánto tarda la escena en escribir celdas (CPU, código de prueba).
+    let sceneMs = 0;
+    const r = runBenchmark(
+      benchFrames,
+      (t) => {
+        const t0 = performance.now();
+        scene.render(1, t);
+        sceneMs += performance.now() - t0;
+        grid.sync(scene.camera, view);
         app.render();
       },
-      onFrame(stats) {
-        overlay?.frame(stats);
-      },
+      renderer.gl,
+    );
+    const scenePerFrame = sceneMs / (benchFrames + 10);
+    const text =
+      `benchmark ${cols}×${rows}, ${r.frames} frames: ${r.msPerFrame.toFixed(2)} ms/frame ` +
+      `(peor ${r.worstMs.toFixed(2)} ms) → hasta ${r.maxFps.toFixed(0)} fps sin vsync · ` +
+      `escena ${scenePerFrame.toFixed(2)} ms, subida + render ${(r.msPerFrame - scenePerFrame).toFixed(2)} ms`;
+    console.info(text);
+    document.body.dataset['bench'] = text;
+  }
+
+  const loop = createGameLoop({
+    update(dt) {
+      scene.update(dt);
     },
-    loopOptions,
-  );
+    render(alpha) {
+      drawFrame(alpha, performance.now() / 1000);
+    },
+    onFrame(stats) {
+      overlay?.frame(stats);
+    },
+  });
   loop.start();
 }
 
