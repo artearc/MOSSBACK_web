@@ -95,6 +95,23 @@ npm run font       # regenera el atlas MSDF desde assets/fonts/fonts.json
 npm run electron   # app de escritorio en desarrollo
 ```
 
+En desarrollo (`npm run dev`), parámetros de URL y teclas:
+
+- `?scene=stress` escena de estrés de la rejilla (`&cells=400x240`); por defecto, el huerto de prueba.
+- `?bench=500` mide ms/frame sin vsync (separa simulación, preparar frame y subida + render). En el huerto añade 2.000 entidades; `&entities=N` para cambiarlo.
+- F2 panel de ajustes (Tweakpane) · F3 overlay de rendimiento.
+- Consola: `__mossback.step(120)` simula 120 pasos de golpe; `__mossback.tuning` son los ajustes.
+
+## Render en vista 3/4
+
+Capas de abajo arriba: `ground` (rejilla) → `objects` (rejilla: troncos, vallas, muros) → `shadows` (entidades) → `actors` (entidades, ordenadas por Y) → `overhead` (rejilla: copas, tejados) → `sky` (entidades) → `fx`. Lo que se mueve va en capas de entidades (quads instanciados, mismo atlas y tabla de glifos que la rejilla). Las colisiones van en un mapa de sólidos aparte de lo que se dibuja.
+
+## Pulido pendiente
+
+En orden; se hace cuando el loop sea divertido.
+
+1. **Transparentar copas y tejados** cuando el personaje está debajo (fundido suave de esas celdas de `overhead`; el formato de celda ya guarda alfa).
+
 ## Forma de trabajar
 
 - **Pasos pequeños.** Un hito o subtarea cada vez; que funcione y se vea bien antes de pasar a lo siguiente.

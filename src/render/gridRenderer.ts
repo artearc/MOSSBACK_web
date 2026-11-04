@@ -63,7 +63,8 @@ export class GridRenderer {
   readonly stats: GridSyncStats = { uploadedTexels: 0, uploadCalls: 0, drawCalls: 0 };
   private readonly entries: LayerEntry[] = [];
   private readonly byName = new Map<string, LayerEntry>();
-  private readonly glyphSource: BufferImageSource;
+  /** Tabla de glifos en la GPU; la comparten las capas de entidades. */
+  readonly glyphSource: BufferImageSource;
   private readonly transform: LayerTransform = { scale: 1, x: 0, y: 0 };
 
   constructor(options: GridRendererOptions) {
@@ -147,6 +148,16 @@ export class GridRenderer {
     const entry = this.byName.get(name);
     if (!entry) throw new Error(`Capa desconocida: ${name}`);
     return entry.layer;
+  }
+
+  /**
+   * Objeto de PixiJS de una capa. Sirve para intercalar capas de rejilla y de entidades en
+   * otro contenedor (al añadirlo a otro, PixiJS lo saca de `container`).
+   */
+  mesh(name: string): Mesh<MeshGeometry, Shader> {
+    const entry = this.byName.get(name);
+    if (!entry) throw new Error(`Capa desconocida: ${name}`);
+    return entry.mesh;
   }
 
   setLayerVisible(name: string, visible: boolean): void {

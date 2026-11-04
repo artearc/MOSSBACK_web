@@ -18,9 +18,12 @@
     "font": "node scripts/build-font.mjs"
   },
   "dependencies": {
-    "pixi.js": "^8.22.0"
+    "miniplex": "^2.0.0",
+    "pixi.js": "^8.22.0",
+    "tweakpane": "^4.0.5"
   },
   "devDependencies": {
+    "@tweakpane/core": "^2.0.5",
     "msdf-bmfont-xml": "^2.8.0",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2",
