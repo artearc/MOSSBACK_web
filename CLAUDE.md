@@ -4,6 +4,8 @@ Juego cozy de granja y construcción en ASCII detallado y animado. Tu hogar est�
 
 Desarrollador en solitario (Alex). Plataforma objetivo: PC (Steam, incluido Steam Deck) y demo web en itch.io.
 
+El diseño completo está en `docs/GDD.md`. Este archivo es el resumen operativo; consulta el GDD cuando trabajes en una mecánica, zona, región o personaje concreto. Si el GDD y este archivo se contradicen, pregunta.
+
 ## Pilares (toda decisión se mide contra esto)
 
 1. **Un hogar que viaja.** El mundo se renueva solo: clima, cultivos, visitantes y recursos cambian por región.
