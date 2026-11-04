@@ -37,7 +37,7 @@ export function createGridStressScene(
 
   const ids = (chars: string): GlyphId[] => [...chars].map((c) => glyphs.id(c));
   const groundGlyphs = ids('.,\'`"·∙:;░');
-  const plantGlyphs = ids('τ¥Γ¶↑Φ');
+  const plantGlyphs = ids('♣♠τ¥Γ¶↑Φ');
   const fxGlyphs = ids('░▒▓▒░');
 
   // Objetos colocados con el RNG con semilla: misma escena en cada recarga.

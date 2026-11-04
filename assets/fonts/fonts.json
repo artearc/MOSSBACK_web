@@ -16,9 +16,17 @@
   },
   "fonts": [
     {
+      "$comment": "Fuente principal. Su tamaño de texto es la referencia para las demás.",
       "file": "src/JetBrainsMono-Regular.ttf",
       "charsets": ["cp437", "latin1"],
       "extra": "←↑→↓↖↗↘↙◆◇□▪▫●◦⌘∴∵",
+      "names": {}
+    },
+    {
+      "$comment": "Respaldo: solo aporta los caracteres que la principal no tiene (♣ ♥ ☺ ♪ ☼…).",
+      "file": "src/DejaVuSansMono.ttf",
+      "charsets": ["cp437", "latin1"],
+      "extra": "★☆☀☁☂☾♡♢♤♧✦✧",
       "names": {}
     }
   ]

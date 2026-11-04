@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import realManifest from '../../assets/fonts/atlas.json';
+import cp437 from '../data/cp437.json';
 import {
   EMPTY_GLYPH,
   GLYPH_FLOATS,
@@ -67,6 +68,11 @@ describe('atlas generado (assets/fonts/atlas.json)', () => {
   it('tiene ASCII imprimible, cajas y bloques', () => {
     for (let cp = 0x21; cp <= 0x7e; cp++) expect(table.has(String.fromCodePoint(cp))).toBe(true);
     for (const ch of '─│┌┐└┘├┤┬┴┼═║╔╗╚╝░▒▓█▀▄▌▐ñÑáéíóú') expect(table.has(ch)).toBe(true);
+  });
+
+  it('cubre todo CP437 (REXPaint), con DejaVu Sans Mono de respaldo', () => {
+    const missing = cp437.map((cp) => String.fromCodePoint(cp)).filter((ch) => !table.has(ch));
+    expect(missing).toEqual([]);
   });
 
   it('los uv caen dentro del atlas y los glifos de texto dentro de la celda', () => {

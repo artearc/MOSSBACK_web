@@ -9,15 +9,8 @@
 //
 // El renderizador solo lee el manifiesto, así que añadir glifos no requiere tocarlo.
 
-import { execFileSync } from 'node:child_process';
-import {
-  copyFileSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-  readdirSync,
-} from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,10 +19,26 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fontsDir = join(root, 'assets', 'fonts');
 const config = JSON.parse(readFileSync(join(fontsDir, 'fonts.json'), 'utf8'));
 const cp437 = JSON.parse(readFileSync(join(root, 'src', 'data', 'cp437.json'), 'utf8'));
-const cli = join(root, 'node_modules', 'msdf-bmfont-xml', 'cli.js');
+
+// Se usa la API de Node y no la línea de comandos: en Windows, el CLI rechaza cualquier ruta
+// en --reuse (bug de su dependencia is-invalid-path), y sin --reuse no se pueden juntar
+// varias fuentes en un atlas.
+const generateBMFont = createRequire(import.meta.url)('msdf-bmfont-xml');
+const silentLogger = { log() {}, warn: console.warn, error: console.error };
+
+function generate(fontPath, options) {
+  return new Promise((resolvePromise, reject) => {
+    generateBMFont(
+      fontPath,
+      options,
+      (error, textures, font) => (error ? reject(error) : resolvePromise({ textures, font })),
+      silentLogger,
+    );
+  });
+}
 
 /** Caracteres que no se dibujan: se resuelven al glifo vacío (id 0). */
-const isBlank = (cp) => cp <= 0x20 || cp === 0x7f || cp === 0xa0;
+const isBlank = (cp) => cp <= 0x20 || cp === 0x7f || cp === 0xa0 || cp === 0xad;
 
 const PRESETS = {
   ascii: () => range(0x21, 0x7e),
@@ -55,12 +64,16 @@ const isFill = (cp) => fillRanges.some(([a, b]) => cp >= a && cp <= b);
 
 const { image, manifest, textureSize, fontSize, distanceRange } = config.output;
 const tmp = mkdtempSync(join(tmpdir(), 'mossback-font-'));
-// msdf-bmfont crea el .cfg en la primera fuente; las siguientes lo reutilizan para añadirse
-// al mismo atlas.
-let reuseFile = null;
+// msdf-bmfont guarda en este .cfg cómo ha empaquetado el atlas; cada fuente lo reutiliza
+// para añadirse al mismo atlas sin mover los glifos anteriores.
+const reuseFile = join(tmp, 'atlas.cfg');
+/** PNG del atlas tras la última fuente (contiene los glifos de todas). */
+let atlasPng = null;
+/** Escala y centro del texto de la fuente principal; las de respaldo los reutilizan. */
+let primaryText = null;
 
 const glyphs = [];
-const missing = [];
+const missing = new Set();
 const seen = new Set();
 
 try {
@@ -78,47 +91,28 @@ try {
     for (const cp of Object.keys(names)) wanted.add(Number(cp));
     const requested = [...wanted].filter((cp) => !isBlank(cp) && !seen.has(cp));
 
-    const charsetFile = join(tmp, 'charset.txt');
-    writeFileSync(charsetFile, String.fromCodePoint(...requested), 'utf8');
-
-    const before = new Set(readdirSync(tmp));
-    execFileSync(
-      process.execPath,
-      [
-        cli,
-        // `--reuse` va primero: sin ruta, se comería el argumento siguiente.
-        '--reuse',
-        ...(reuseFile ? [reuseFile] : []),
-        '-f',
-        'json',
-        '-o',
-        join(tmp, image),
-        '-s',
-        String(fontSize),
-        '-r',
-        String(distanceRange),
-        '-m',
-        textureSize.join(','),
-        '-t',
-        'msdf',
-        '-i',
-        charsetFile,
-        join(fontsDir, font.file),
-      ],
-      { stdio: 'pipe' },
-    );
-    if (!reuseFile) {
-      const cfg = readdirSync(tmp).find((f) => f.endsWith('.cfg'));
-      if (!cfg) throw new Error('msdf-bmfont no creó el archivo .cfg de reutilización');
-      reuseFile = join(tmp, cfg);
+    if (requested.length === 0) {
+      console.log(`${font.file}: nada que añadir`);
+      continue;
     }
-    const jsonName = readdirSync(tmp).find((f) => f.endsWith('.json') && !before.has(f));
-    if (!jsonName) throw new Error(`msdf-bmfont no generó JSON para ${font.file}`);
-    const bm = JSON.parse(readFileSync(join(tmp, jsonName), 'utf8'));
-
-    if (bm.common.pages > 1 || bm.chars.some((c) => c.page !== 0)) {
+    const { textures, font: generated } = await generate(join(fontsDir, font.file), {
+      outputType: 'json',
+      filename: join(tmp, 'atlas'),
+      fontSize,
+      distanceRange,
+      textureSize,
+      fieldType: 'msdf',
+      charset: String.fromCodePoint(...requested),
+      reuse: reuseFile,
+    });
+    if (textures.length !== 1) {
       throw new Error('El atlas no cabe en una página: sube output.textureSize');
     }
+    atlasPng = textures[0].texture;
+    // La siguiente fuente lee de disco el .cfg y el PNG del atlas para añadirse a él.
+    writeFileSync(`${textures[0].filename}.png`, atlasPng);
+    writeFileSync(reuseFile, JSON.stringify(generated.settings));
+    const bm = JSON.parse(generated.data);
 
     const pad = bm.info.padding[0];
     const advance = bm.chars.find((c) => c.id === 0x4d /* M */)?.xadvance ?? bm.chars[0].xadvance;
@@ -127,28 +121,38 @@ try {
     // una X). Esos se tratan como ausentes.
     const byCp = new Map(bm.chars.filter((c) => c.index !== 0).map((c) => [c.id, c]));
 
-    for (const cp of requested) if (!byCp.has(cp)) missing.push(cp);
+    for (const cp of requested) if (!byCp.has(cp)) missing.add(cp);
     const present = requested.filter((cp) => byCp.has(cp));
 
-    // Caja que contiene el dibujo de todos los glifos de texto (sin el margen del campo de
-    // distancia). Escalar esa caja a la celda garantiza que ningún glifo se recorta.
-    let top = Infinity;
-    let bottom = -Infinity;
-    let left = Infinity;
-    let right = -Infinity;
-    for (const cp of present) {
-      if (isFill(cp)) continue;
-      const c = byCp.get(cp);
-      top = Math.min(top, c.yoffset + pad);
-      bottom = Math.max(bottom, c.yoffset + c.height - pad);
-      left = Math.min(left, c.xoffset + pad - advance / 2);
-      right = Math.max(right, c.xoffset + c.width - pad - advance / 2);
-    }
-    const halfW = Math.max(-left, right);
     const stretchX = config.layout.textStretchX;
-    const scale =
-      config.layout.textScale * Math.min(1 / (bottom - top), 1 / (2 * halfW * stretchX));
-    const centerY = (top + bottom) / 2;
+    const baseline = bm.common.base;
+    if (!primaryText) {
+      // Fuente principal: caja que contiene el dibujo de todos sus glifos de texto (sin el
+      // margen del campo de distancia). Escalar esa caja a la celda garantiza que ningún
+      // glifo se recorta.
+      let top = Infinity;
+      let bottom = -Infinity;
+      let left = Infinity;
+      let right = -Infinity;
+      for (const cp of present) {
+        if (isFill(cp)) continue;
+        const c = byCp.get(cp);
+        top = Math.min(top, c.yoffset + pad);
+        bottom = Math.max(bottom, c.yoffset + c.height - pad);
+        left = Math.min(left, c.xoffset + pad - advance / 2);
+        right = Math.max(right, c.xoffset + c.width - pad - advance / 2);
+      }
+      const halfW = Math.max(-left, right);
+      primaryText = {
+        scale: config.layout.textScale * Math.min(1 / (bottom - top), 1 / (2 * halfW * stretchX)),
+        // Centro vertical medido desde la línea base, para alinear las fuentes de respaldo.
+        centerFromBaseline: (top + bottom) / 2 - baseline,
+      };
+    }
+    // Las fuentes de respaldo usan la escala de la principal (todas se generan con los mismos
+    // píxeles por em) y se alinean por la línea base: así sus glifos no cambian de tamaño.
+    const scale = primaryText.scale;
+    const centerY = baseline + primaryText.centerFromBaseline;
     const bleed = config.layout.fillBleed;
 
     for (const cp of present) {
@@ -176,9 +180,10 @@ try {
     console.log(`${font.file}: ${present.length} glifos`);
   }
 
-  copyFileSync(join(tmp, image), join(fontsDir, image));
+  if (!atlasPng) throw new Error('No se generó ningún glifo');
+  writeFileSync(join(fontsDir, image), atlasPng);
   // msdf-bmfont recorta el atlas a lo que ocupa: el tamaño real sale de la cabecera del PNG.
-  const png = readFileSync(join(fontsDir, image));
+  const png = atlasPng;
   const out = {
     version: 1,
     atlas: {
@@ -192,9 +197,11 @@ try {
   };
   writeFileSync(join(fontsDir, manifest), JSON.stringify(out) + '\n');
   console.log(`Escrito ${image} y ${manifest} (${glyphs.length} glifos + vacío).`);
-  if (missing.length > 0) {
+  // Solo se avisa de lo que no ha aportado ninguna fuente.
+  const stillMissing = [...missing].filter((cp) => !seen.has(cp));
+  if (stillMissing.length > 0) {
     console.warn(
-      `Sin glifo en la fuente (se ignoran): ${missing.map((cp) => String.fromCodePoint(cp)).join(' ')}`,
+      `Sin glifo en ninguna fuente (se ignoran): ${stillMissing.map((cp) => String.fromCodePoint(cp)).join(' ')}`,
     );
   }
 } finally {

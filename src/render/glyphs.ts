@@ -68,7 +68,7 @@ export function parseGlyphManifest(data: unknown): GlyphManifest {
 
 /** Caracteres que no se dibujan y se resuelven al glifo vacío. */
 function isBlank(cp: number): boolean {
-  return cp <= 0x20 || cp === 0x7f || cp === 0xa0;
+  return cp <= 0x20 || cp === 0x7f || cp === 0xa0 || cp === 0xad; // 0xad: guion opcional
 }
 
 export class GlyphTable {
